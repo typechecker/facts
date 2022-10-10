@@ -16,6 +16,7 @@
 {-# LANGUAGE DataKinds              #-}
 {-# LANGUAGE DeriveDataTypeable     #-}
 {-# LANGUAGE DeriveGeneric          #-}
+{-# LANGUAGE DeriveLift             #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -80,13 +81,10 @@ import qualified Language.Haskell.TH.Syntax as TH
 -- @ps@. @ps@ is a type-level list containing /properties/, that is, void
 -- data types symbolizing various concepts, see 'Prop'.
 
-newtype Refined (ps :: [*]) a = Refined a
-  deriving (Eq, Ord, Show, Typeable)
+newtype Refined (ps :: [Type]) a = Refined a
+  deriving (Eq, Ord, Show, Typeable, TH.Lift)
 
 type role Refined phantom nominal
-
-instance TH.Lift a => TH.Lift (Refined ps a) where
-  lift (Refined a) = [| Refined a |]
 
 -- | 'refined' creates a refined type with no associated properties. We
 -- don't demand anything, and so quite conveniently this is a pure function.
@@ -137,7 +135,7 @@ class (Show a, Generic p) => Prop a p where
   --
   -- > type PropProjection Text IsURI = URI
 
-  type PropProjection a p :: *
+  type PropProjection a p :: Type
 
   -- | 'checkProp' is the way to check if @a@ has property @p@. It either
   -- has it, and then we obtain @'PropProjection' a p@ or it doesn't have
@@ -180,7 +178,7 @@ instance Axiom "id_prop_post'" '[a] '[IdProp `Via` a] a
 
 -- | Obtain a name of property type as a type of the kind 'Symbol'.
 
-type family PropName (p :: *) :: Symbol where
+type family PropName (p :: Type) :: Symbol where
   PropName (a `Via` b) = "*"
     `AppendSymbol` PropName' (Rep a)
     `AppendSymbol` "*via*"
@@ -189,7 +187,7 @@ type family PropName (p :: *) :: Symbol where
 
 -- | A helper for 'PropName'.
 
-type family PropName' (p :: * -> *) :: Symbol where
+type family PropName' (p :: Type -> Type) :: Symbol where
   PropName' (D1 ('MetaData n m p nt) V1) =
     p `AppendSymbol` "-" `AppendSymbol` m `AppendSymbol` "-" `AppendSymbol` n
   PropName' p = TypeError
@@ -199,11 +197,11 @@ type family PropName' (p :: * -> *) :: Symbol where
 -- in the set, nothing will happen. The order of items in the set is
 -- (mostly) deterministic.
 
-type family AddProp (ps :: [*]) (p :: *) :: [*] where
+type family AddProp (ps :: [Type]) (p :: Type) :: [Type] where
   AddProp '[] p = '[p]
   AddProp (n ': ps) p = AddPropC (CmpSymbol (PropName p) (PropName n)) p n ps
 
-type family AddPropC (o :: Ordering) (a :: *) (b :: *) (as :: [*]) :: [*] where
+type family AddPropC (o :: Ordering) (a :: Type) (b :: Type) (as :: [Type]) :: [Type] where
   AddPropC 'LT a b as = a ': b ': as
   AddPropC 'EQ a a as = a ': as
   AddPropC 'EQ a b as = a ': b ': as
@@ -212,7 +210,7 @@ type family AddPropC (o :: Ordering) (a :: *) (b :: *) (as :: [*]) :: [*] where
 -- | The resulting constraint will be satisfied iff the collection of
 -- properties @ps@ has the property @p@ is it.
 
-type family HasProp (ps :: [*]) (p :: *) :: Constraint where
+type family HasProp (ps :: [Type]) (p :: Type) :: Constraint where
   HasProp '[] p = TypeError
     ('ShowType p ':<>: 'Text " is not a proven property")
   HasProp (p ': ps) p = ()
@@ -220,14 +218,14 @@ type family HasProp (ps :: [*]) (p :: *) :: Constraint where
 
 -- | Like 'HasProp' but for many properties at once.
 
-type family HasProps (ps :: [*]) (qs :: [*]) :: Constraint where
+type family HasProps (ps :: [Type]) (qs :: [Type]) :: Constraint where
   HasProps ps '[] = ()
   HasProps ps (q ': qs) = (HasProp ps q, HasProps ps qs)
 
 -- | Construct a list of properties from @ps@ for projection obtained via
 -- @p@.
 
-type family ProjectionProps (ps :: [*]) (p :: *)  :: [*] where
+type family ProjectionProps (ps :: [Type]) (p :: Type)  :: [Type] where
   ProjectionProps ps (t `Via` p) = ProjectionProps (ProjectionProps ps p) t
   ProjectionProps '[] p = '[]
   ProjectionProps ((t `Via` p) ': ps) p = t ': ProjectionProps ps p
@@ -360,7 +358,7 @@ instance Exception RefinedException where
 -- properties of “connected” types. Without 'Via', 'Axiom's could only talk
 -- about relations between properties of the same type.
 
-data (t :: *) `Via` (p :: *) deriving Generic
+data (t :: Type) `Via` (p :: Type) deriving Generic
 
 instance (Prop (PropProjection a p) t, Prop a p) => Prop a (t `Via` p) where
 
@@ -417,7 +415,7 @@ followProp (Refined a) =
 -- Again, without the argument parameter @vs@ that trick would be
 -- impossible.
 
-class Axiom (name :: Symbol) (vs :: [*]) (qs :: [*]) (p :: *) | name vs -> qs p
+class Axiom (name :: Symbol) (vs :: [Type]) (qs :: [Type]) (p :: Type) | name vs -> qs p
 
 -- | A helper wrapper to help us construct heterogeneous type-level lists
 -- with respect to kinds of elements.
